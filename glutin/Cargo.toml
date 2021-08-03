@@ -21,10 +21,13 @@ default = ["x11", "wayland"]
 
 [dependencies]
 lazy_static = "1.3"
-winit = { version = "0.25", default-features = false }
+# winit = { version = "0.25", default-features = false }
+winit = { git = "https://github.com/Zhenghui-SUN/winit"}
+# winit = { path = "../../../sunzhenghui-winit/winit" }
 
 [target.'cfg(target_os = "android")'.dependencies]
-android_glue = "0.2"
+ndk-glue = { git = "https://github.com/Zhenghui-SUN/android-ndk-rs" }
+# ndk-glue = { path = "../../../sunzhenghui-android-ndk-rs/android-ndk-rs/ndk-glue" }
 glutin_egl_sys = { version = "0.1.4", path = "../glutin_egl_sys" }
 parking_lot = "0.11"
 

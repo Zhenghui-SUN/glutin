@@ -1,10 +1,14 @@
 #![cfg(target_os = "android")]
 
-use crate::api::egl::{Context as EglContext, NativeDisplay, SurfaceType as EglSurfaceType};
+use crate::api::egl::{
+    Context as EglContext, NativeDisplay, SurfaceType as EglSurfaceType,
+};
 use crate::CreationError::{self, OsError};
-use crate::{Api, ContextError, GlAttributes, PixelFormat, PixelFormatRequirements, Rect};
+use crate::{
+    Api, ContextError, GlAttributes, PixelFormat, PixelFormatRequirements, Rect,
+};
 
-use crate::platform::android::EventLoopExtAndroid;
+//use crate::platform::android::EventLoopExtAndroid;
 use glutin_egl_sys as ffi;
 use parking_lot::Mutex;
 use winit;
@@ -26,8 +30,8 @@ pub struct Context(Arc<AndroidContext>);
 #[derive(Debug)]
 struct AndroidSyncEventHandler(Arc<AndroidContext>);
 
-impl android_glue::SyncEventHandler for AndroidSyncEventHandler {
-    fn handle(&mut self, event: &android_glue::Event) {
+/*impl ndk_glue::SyncEventHandler for AndroidSyncEventHandler {
+    fn handle(&mut self, event: &ndk_glue::Event) {
         match *event {
             // 'on_surface_destroyed' Android event can arrive with some delay
             // because multithreading communication. Because of
@@ -36,7 +40,7 @@ impl android_glue::SyncEventHandler for AndroidSyncEventHandler {
             // surface already destroyed. EGL generates a BAD_SURFACE error in
             // this situation. Set stop to true to prevent
             // swap_buffer call race conditions.
-            android_glue::Event::TermWindow => {
+            ndk_glue::Event::TermWindow => {
                 let mut stopped = self.0.stopped.as_ref().unwrap().lock();
                 *stopped = true;
             }
@@ -45,7 +49,7 @@ impl android_glue::SyncEventHandler for AndroidSyncEventHandler {
             }
         };
     }
-}
+}*/
 
 impl Context {
     #[inline]
@@ -57,23 +61,33 @@ impl Context {
     ) -> Result<(winit::window::Window, Self), CreationError> {
         let win = wb.build(el)?;
         let gl_attr = gl_attr.clone().map_sharing(|c| &c.0.egl_context);
-        let nwin = unsafe { android_glue::get_native_window() };
-        if nwin.is_null() {
+        let nwin = unsafe { ndk_glue::native_window() };
+        if nwin.is_none() {
             return Err(OsError("Android's native window is null".to_string()));
         }
         let native_display = NativeDisplay::Android;
-        let egl_context =
-            EglContext::new(pf_reqs, &gl_attr, native_display, EglSurfaceType::Window, |c, _| {
-                Ok(c[0])
-            })
-            .and_then(|p| p.finish(nwin as *const _))?;
-        let ctx = Arc::new(AndroidContext { egl_context, stopped: Some(Mutex::new(false)) });
+        let egl_context = EglContext::new(
+            pf_reqs,
+            &gl_attr,
+            native_display,
+            EglSurfaceType::Window,
+            |c, _| Ok(c[0]),
+        )
+        .and_then(|p| {
+            p.finish(nwin.as_ref().unwrap().ptr().as_ptr() as *const _)
+        })?;
+        let ctx = Arc::new(AndroidContext {
+            egl_context,
+            stopped: Some(Mutex::new(false)),
+        });
 
-        let handler = Box::new(AndroidSyncEventHandler(ctx.clone()));
-        android_glue::add_sync_event_handler(handler);
+        // TODO: With `ndk-glue` we cannot directly register handlers in such manner, so we want work around it in different way.
+
+        //let handler = Box::new(AndroidSyncEventHandler(ctx.clone()));
+        //android_glue::add_sync_event_handler(handler);
         let context = Context(ctx.clone());
 
-        el.set_suspend_callback(Some(Box::new(move |suspended| {
+        /*el.set_suspend_callback(Some(Box::new(move |suspended| {
             let mut stopped = ctx.stopped.as_ref().unwrap().lock();
             *stopped = suspended;
             if suspended {
@@ -86,11 +100,11 @@ impl Context {
                 // Android has started the activity or sent it to foreground.
                 // Restore the EGL surface and animation loop.
                 unsafe {
-                    let nwin = android_glue::get_native_window();
+                    let nwin = ndk_glue::native_window();
                     ctx.egl_context.on_surface_created(nwin as *const _);
                 }
             }
-        })));
+        })));*/
 
         Ok((win, context))
     }
@@ -111,7 +125,10 @@ impl Context {
             |c, _| Ok(c[0]),
         )?;
         let egl_context = context.finish_pbuffer(size)?;
-        let ctx = Arc::new(AndroidContext { egl_context, stopped: None });
+        let ctx = Arc::new(AndroidContext {
+            egl_context,
+            stopped: None,
+        });
         Ok(Context(ctx))
     }
 
@@ -164,7 +181,10 @@ impl Context {
     }
 
     #[inline]
-    pub fn swap_buffers_with_damage(&self, rects: &[Rect]) -> Result<(), ContextError> {
+    pub fn swap_buffers_with_damage(
+        &self,
+        rects: &[Rect],
+    ) -> Result<(), ContextError> {
         if let Some(ref stopped) = self.0.stopped {
             let stopped = stopped.lock();
             if *stopped {
